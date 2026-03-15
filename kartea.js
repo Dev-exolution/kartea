@@ -1,4 +1,217 @@
-// persistent cart data stored in localStorage
+// ================================
+// PAGE SWITCHING FUNCTION
+// ================================
+
+function switchPage(pageId) {
+    const allPages = document.querySelectorAll('.page-section');
+    allPages.forEach(page => {
+        page.style.display = 'none';
+    });
+    
+    const targetPage = document.getElementById(pageId);
+    if (targetPage) {
+        targetPage.style.display = 'block';
+    }
+}
+
+// ================================
+// AUTHENTICATION FUNCTIONS
+// ================================
+
+function togglePassword(inputId = "password", eyeElement = null) {
+    const password = document.getElementById(inputId);
+    const eye = eyeElement || document.querySelector(".toggle-eye");
+    if (!password || !eye) return;
+
+    const isHidden = password.type === "password";
+    password.type = isHidden ? "text" : "password";
+    if (isHidden) {
+        eye.src = "preview-show-interface-icon-free-vector.jpg";
+        eye.alt = "Hide password";
+    } else {
+        eye.src = "eye-close-1.png";
+        eye.alt = "Show password";
+    }
+}
+
+function login(event) {
+    event.preventDefault();
+    const errorEl = document.getElementById('error-message');
+    const email = document.getElementById("email").value.trim().toLowerCase();
+    const password = document.getElementById("password").value.trim();
+    if (errorEl) errorEl.innerText = '';
+
+    const user = findUser(email, password);
+    if (user) {
+        const role = user.role || 'user';
+        setRole(role);
+        setCurrentUser(email);
+        if (errorEl) errorEl.innerText = `${role.charAt(0).toUpperCase() + role.slice(1)} login successful — redirecting...`;
+        if (typeof switchPage !== 'undefined') {
+            setTimeout(() => {
+                if (role === 'admin') {
+                    switchPage('admin-page');
+                    if (typeof updateUsersList !== 'undefined') updateUsersList();
+                } else {
+                    switchPage('shop-page');
+                }
+            }, 500);
+        } else {
+            if (role === 'admin') {
+                window.location.replace("admin.html");
+            } else {
+                window.location.replace("kartea.html");
+            }
+        }
+        return;
+    }
+
+    if (email === "admin@gmail.com" && password === "admin123") {
+        setRole('admin');
+        setCurrentUser(email);
+        if (errorEl) errorEl.innerText = 'Admin login successful — redirecting...';
+        if (typeof switchPage !== 'undefined') {
+            setTimeout(() => {
+                switchPage('admin-page');
+                if (typeof updateUsersList !== 'undefined') updateUsersList();
+            }, 500);
+        } else {
+            window.location.replace("admin.html");
+        }
+        return;
+    }
+
+    if (errorEl) errorEl.innerText = "Invalid login credentials. If you don't have an account, sign up first.";
+}
+
+function register(event) {
+    event.preventDefault();
+    const email = document.getElementById('signup-email').value.trim().toLowerCase();
+    const password = document.getElementById('signup-password').value.trim();
+    const confirm = document.getElementById('signup-confirm').value.trim();
+
+    if (!email || !password || !confirm) {
+        alert('Please fill in all fields.');
+        return;
+    }
+    if (password !== confirm) {
+        alert('Passwords do not match.');
+        return;
+    }
+    if (email === 'admin@gmail.com') {
+        alert('This email is reserved. Please use a different email.');
+        return;
+    }
+
+    const existing = getUsers().find(u => u.email === email);
+    if (existing) {
+        alert('This email is already registered. Please log in.');
+        return;
+    }
+
+    addUser({ email, password, role: 'user' });
+    alert('Your account has been created. You can now log in.');
+    document.getElementById('signupForm').reset();
+    if (typeof switchPage !== 'undefined') {
+        switchPage('login-page');
+    }
+}
+
+function getUsers() {
+    const raw = localStorage.getItem('users');
+    try {
+        return raw ? JSON.parse(raw) : [];
+    } catch {
+        return [];
+    }
+}
+
+function setUsers(users) {
+    localStorage.setItem('users', JSON.stringify(users));
+}
+
+function addUser(user) {
+    const users = getUsers();
+    users.push(user);
+    setUsers(users);
+}
+
+function findUser(email, password) {
+    const users = getUsers();
+    return users.find(u => u.email === email && u.password === password);
+}
+
+function setRole(role) {
+    localStorage.setItem('role', role);
+}
+
+function getRole() {
+    return localStorage.getItem('role');
+}
+
+function setCurrentUser(email) {
+    localStorage.setItem('currentUser', email);
+}
+
+function getCurrentUser() {
+    return localStorage.getItem('currentUser');
+}
+
+function logout() {
+    localStorage.removeItem('role');
+    localStorage.removeItem('currentUser');
+    if (typeof switchPage !== 'undefined') {
+        switchPage('login-page');
+        document.getElementById('email').value = '';
+        document.getElementById('password').value = '';
+    } else {
+        window.location.href = "kartea.html";
+    }
+}
+
+function requireRole(expectedRole) {
+    const role = getRole();
+    if (role !== expectedRole) {
+        if (typeof logout !== 'undefined') {
+            logout();
+        }
+    }
+}
+
+function getLoginStatusText() {
+    const role = getRole();
+    const email = getCurrentUser();
+    if (!role || !email) return 'Not logged in yet.';
+    return `Logged in as ${role} (${email})`;
+}
+
+// Check auth on page load
+document.addEventListener('DOMContentLoaded', () => {
+    // Check if user is logged in
+    const role = getRole();
+    if (!role) {
+        // Not logged in, show login page
+        switchPage('login-page');
+    } else {
+        // Logged in, show appropriate page
+        if (role === 'admin') {
+            switchPage('admin-page');
+            if (typeof updateUsersList !== 'undefined') updateUsersList();
+        } else {
+            switchPage('shop-page');
+        }
+    }
+    
+    const roleStatus = document.getElementById('role-status');
+    if (roleStatus) {
+        roleStatus.innerText = getLoginStatusText();
+    }
+});
+
+// ================================
+// CART & SHOP FUNCTIONS
+// ================================
+
 // structure: { title: { count: n, price: p } }
 const CART_KEY = 'cartCounts';
 let cartCounts = {};
@@ -90,7 +303,8 @@ function renderCartBox() {
         removeBtn.className = 'remove-btn';
         removeBtn.setAttribute('aria-label', `Remove ${title}`);
         removeBtn.textContent = '×';
-        removeBtn.addEventListener('click', () => {
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
             removeFromCart(title);
         });
         line.appendChild(removeBtn);
@@ -99,8 +313,18 @@ function renderCartBox() {
         totalCost += lineTotal;
     }
     if (isNaN(totalCost)) totalCost = 0;
+    const subtotalElem = document.getElementById('cart-subtotal');
+    if (subtotalElem) subtotalElem.textContent = totalCost.toFixed(2);
+    
+    // Calculate and display tax (12%)
+    const tax = totalCost * 0.12;
+    const taxElem = document.getElementById('cart-tax');
+    if (taxElem) taxElem.textContent = tax.toFixed(2);
+    
+    // Calculate total with tax
+    const finalTotal = totalCost + tax;
     const totalElem = document.getElementById('cart-total');
-    if (totalElem) totalElem.textContent = totalCost.toFixed(2);
+    if (totalElem) totalElem.textContent = finalTotal.toFixed(2);
 }
 
 function toggleCartBox(show) {
@@ -194,6 +418,48 @@ if (closeBtn) {
     closeBtn.addEventListener('click', () => toggleCartBox(false));
 }
 
+// Checkout button handler
+const checkoutBtn = document.getElementById('checkout-btn');
+if (checkoutBtn) {
+    checkoutBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        const total = document.getElementById('cart-total').textContent;
+        if (total && total !== '0.00') {
+            // Build receipt items from cart
+            const receiptItems = [];
+            for (const [title, data] of Object.entries(cartCounts)) {
+                const count = Number(data.count) || 0;
+                if (count > 0) {
+                    const unitPrice = Number(data.price) || 0;
+                    const lineTotal = unitPrice * count;
+                    receiptItems.push({
+                        name: title,
+                        quantity: count,
+                        unitPrice: unitPrice,
+                        lineTotal: lineTotal
+                    });
+                }
+            }
+            
+            // Save receipt items to localStorage
+            localStorage.setItem('receiptItems', JSON.stringify(receiptItems));
+            
+            // Clear cart after checkout
+            cartCounts = {};
+            saveCart();
+            updateCartIndicator();
+            renderCartBox();
+            toggleCartBox(false);
+            
+            // Display receipt and switch to receipt page
+            displayReceipt();
+            switchPage('receipt-page');
+        } else {
+            alert('Your cart is empty!');
+        }
+    });
+}
+
 // Search filtering by item name
 (function() {
     const form = document.querySelector('.search-bar');
@@ -213,38 +479,66 @@ if (closeBtn) {
 
     function filterItems(query) {
         const term = query.trim().toLowerCase();
-        // manage headings
-        document.querySelectorAll('section.category > h1, section.category > h2').forEach(h => {
-            if (term === '') {
-                h.classList.remove('hidden');
+        const grid = document.querySelector('.items-grid');
+        if (!grid) return;
+
+        grid.querySelectorAll('.item-frame').forEach(frame => {
+            const title = frame.querySelector('.item-title')?.textContent.toLowerCase() || '';
+            if (term === '' || title.includes(term)) {
+                frame.classList.remove('hidden');
             } else {
-                h.classList.add('hidden');
+                frame.classList.add('hidden');
             }
         });
+    }
+})();
 
-        const grid = document.querySelector('.items-grid');
-        if (grid) {
-            // collect matched items so we can move them to the front
-            const matches = [];
-            grid.querySelectorAll('.item-frame').forEach(frame => {
-                const title = frame.querySelector('.item-title')?.textContent.toLowerCase() || '';
-                if (term === '' || title.includes(term)) {
-                    frame.classList.remove('hidden');
-                    matches.push(frame);
+// Category tab filtering - Switch between sections
+(function() {
+    const tabs = document.querySelectorAll('.category-tab');
+    if (tabs.length === 0) return;
+
+    // Set first tab (ALL) as active by default
+    if (tabs[0]) tabs[0].classList.add('active');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            // Remove active class from all tabs
+            tabs.forEach(t => t.classList.remove('active'));
+            // Add active class to clicked tab
+            this.classList.add('active');
+
+            const filter = this.getAttribute('data-filter');
+            const sections = document.querySelectorAll('section.category');
+            
+            sections.forEach(section => {
+                if (filter === 'all') {
+                    // Show all sections
+                    section.style.display = 'block';
+                    // Show all items in all sections
+                    section.querySelectorAll('.item-frame').forEach(frame => {
+                        frame.classList.remove('hidden');
+                    });
                 } else {
-                    frame.classList.add('hidden');
+                    // Check if this section matches the filter
+                    if (section.classList.contains(filter)) {
+                        section.style.display = 'block';
+                        // Show all items in this section
+                        section.querySelectorAll('.item-frame').forEach(frame => {
+                            frame.classList.remove('hidden');
+                        });
+                    } else {
+                        // Hide other sections
+                        section.style.display = 'none';
+                    }
                 }
             });
-            // reorder matched frames to top (preserving their relative order)
-            if (term !== '' && matches.length) {
-                matches.forEach(m => grid.insertBefore(m, grid.firstChild));
-            }
-        }
-
-        // remove any leftover priority class when search is cleared
-        if (term === '') {
-            document.querySelectorAll('.item-frame.priority').forEach(f => f.classList.remove('priority'));
-        }
+        });
+    });
+    
+    // Trigger ALL tab on page load to show all items
+    if (tabs[0]) {
+        tabs[0].click();
     }
 })();
 
@@ -297,3 +591,56 @@ if (closeBtn) {
     }
   });
 })();
+
+// ================================
+// RECEIPT PAGE FUNCTIONS
+// ================================
+
+function getItems() {
+    const stored = localStorage.getItem('receiptItems');
+    if (stored) {
+        try {
+            return JSON.parse(stored);
+        } catch (e) {
+            console.error('Error parsing receipt items:', e);
+            return [];
+        }
+    }
+    return [];
+}
+
+function displayReceipt() {
+    const items = getItems();
+    const itemsContainer = document.getElementById('receipt-items');
+    if (!itemsContainer) return;
+    
+    itemsContainer.innerHTML = '';
+    let subtotal = 0;
+    
+    items.forEach(item => {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'receipt-item';
+        itemDiv.innerHTML = `
+            <div class="receipt-item-name">${item.name} x${item.quantity}</div>
+            <div class="receipt-item-price">₱${item.lineTotal.toFixed(2)}</div>
+        `;
+        itemsContainer.appendChild(itemDiv);
+        subtotal += item.lineTotal;
+    });
+    
+    // Calculate tax and total
+    const tax = subtotal * 0.12;
+    const grandTotal = subtotal + tax;
+    
+    // Update date
+    const dateElement = document.getElementById('receipt-date');
+    if (dateElement) {
+        dateElement.textContent = new Date().toLocaleString();
+    }
+    
+    // Update grand total
+    const totalElement = document.getElementById('grand-total');
+    if (totalElement) {
+        totalElement.textContent = grandTotal.toFixed(2);
+    }
+}
